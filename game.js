@@ -53,16 +53,19 @@ function checkAssetsLoaded(callback) {
 const FPS = 60;
 const GRAVITY = 0.25;
 const JUMP = -4.5;
-const PIPE_SPEED = 2;
+let currentPipeSpeed = 2;
 const PIPE_SPAWN_RATE = 1500; // ms
 const BIRD_X = 50;
 
 // Game state
 let gameState = 'START'; // START, GAME, GAMEOVER
 let score = 0;
+let bestScore = parseInt(localStorage.getItem('flappyBestScore')) || 0;
 let frameCount = 0;
 let baseScroll = 0;
 let canRestart = false;
+let flashOpacity = 0;
+let shakeTimer = 0;
 
 const bird = {
     x: BIRD_X,
@@ -71,13 +74,15 @@ const bird = {
     width: 34,
     height: 24,
     rotation: 0,
-    frame: 0
+    frame: 0,
+    type: 'yellow' // yellow, blue, red
 };
 
 const pipes = [];
+let pipeType = 'green'; // green, red
 const PIPE_GAP = 100;
 const PIPE_MIN_HEIGHT = 50;
-const PIPE_SPAWN_INTERVAL = 90; // frames
+let currentPipeSpawnInterval = 90; // frames
 
 function init() {
     loadAssets(() => {
@@ -95,8 +100,11 @@ function update() {
     frameCount++;
 
     if (gameState !== 'GAMEOVER') {
-        baseScroll = (baseScroll + PIPE_SPEED) % 24;
+        baseScroll = (baseScroll + currentPipeSpeed) % 24;
     }
+
+    if (flashOpacity > 0) flashOpacity -= 0.1;
+    if (shakeTimer > 0) shakeTimer--;
 
     if (gameState === 'START') {
         bird.y = 200 + Math.sin(frameCount / 10) * 10;
@@ -107,7 +115,14 @@ function update() {
     } else if (gameState === 'GAME') {
         updateBird();
         updatePipes();
+        updateDifficulty();
     }
+}
+
+function updateDifficulty() {
+    // Increase speed and decrease interval as score increases
+    currentPipeSpeed = 2 + Math.floor(score / 5) * 0.2;
+    currentPipeSpawnInterval = Math.max(50, 90 - Math.floor(score / 5) * 5);
 }
 
 function updateBird() {
@@ -130,13 +145,14 @@ function updateBird() {
 }
 
 function updatePipes() {
-    if (frameCount % PIPE_SPAWN_INTERVAL === 0) {
+    // Use currentPipeSpawnInterval for spawning
+    if (gameState === 'GAME' && frameCount % currentPipeSpawnInterval === 0) {
         spawnPipe();
     }
 
     for (let i = pipes.length - 1; i >= 0; i--) {
         const p = pipes[i];
-        p.x -= PIPE_SPEED;
+        p.x -= currentPipeSpeed;
 
         if (p.x + p.width < 0) {
             pipes.splice(i, 1);
@@ -168,9 +184,12 @@ function spawnPipe() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Placeholder background
-    ctx.fillStyle = '#70c5ce';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    if (shakeTimer > 0) {
+        const shakeX = (Math.random() - 0.5) * 10;
+        const shakeY = (Math.random() - 0.5) * 10;
+        ctx.translate(shakeX, shakeY);
+    }
 
     if (gameState === 'START') {
         drawStartScreen();
@@ -178,6 +197,12 @@ function draw() {
         drawGame();
     } else if (gameState === 'GAMEOVER') {
         drawGameOverScreen();
+    }
+    ctx.restore();
+
+    if (flashOpacity > 0) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${flashOpacity})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 }
 
@@ -193,7 +218,8 @@ function drawStartScreen() {
 }
 
 function drawBackground() {
-    ctx.drawImage(assets.sprites['background-day'], 0, 0);
+    const bg = score >= 10 ? 'background-night' : 'background-day';
+    ctx.drawImage(assets.sprites[bg], 0, 0);
 }
 
 function drawBase() {
@@ -211,7 +237,7 @@ function drawGame() {
 }
 
 function drawPipes() {
-    const pipeSprite = assets.sprites['pipe-green'];
+    const pipeSprite = assets.sprites[`pipe-${pipeType}`];
     const baseHeight = assets.sprites['base'].height;
 
     pipes.forEach(p => {
@@ -229,9 +255,9 @@ function drawPipes() {
 
 function drawBird() {
     const birdSprites = [
-        assets.sprites['yellowbird-downflap'],
-        assets.sprites['yellowbird-midflap'],
-        assets.sprites['yellowbird-upflap']
+        assets.sprites[`${bird.type}bird-downflap`],
+        assets.sprites[`${bird.type}bird-midflap`],
+        assets.sprites[`${bird.type}bird-upflap`]
     ];
     const sprite = birdSprites[bird.frame];
 
@@ -290,8 +316,18 @@ function checkCollisions() {
 }
 
 function gameOver() {
+    if (gameState === 'GAMEOVER') return;
+
     gameState = 'GAMEOVER';
     canRestart = false;
+    flashOpacity = 1;
+    shakeTimer = 20;
+
+    if (score > bestScore) {
+        bestScore = score;
+        localStorage.setItem('flappyBestScore', bestScore);
+    }
+
     assets.audio['hit'].play();
     setTimeout(() => {
         assets.audio['die'].play();
@@ -308,9 +344,48 @@ function drawGameOverScreen() {
     drawBird();
 
     const gameOver = assets.sprites['gameover'];
-    ctx.drawImage(gameOver, canvas.width / 2 - gameOver.width / 2, canvas.height / 2 - gameOver.height / 2);
+    ctx.drawImage(gameOver, canvas.width / 2 - gameOver.width / 2, canvas.height / 2 - gameOver.height / 2 - 100);
 
-    drawScore();
+    drawScoreboard();
+}
+
+function drawScoreboard() {
+    const boardWidth = 226;
+    const boardHeight = 114;
+    const x = canvas.width / 2 - boardWidth / 2;
+    const y = canvas.height / 2 - boardHeight / 2;
+
+    // Draw board box (simulating the flappy bird scoreboard)
+    ctx.fillStyle = '#ded895'; // Light brownish
+    ctx.strokeStyle = '#543847'; // Dark border
+    ctx.lineWidth = 2;
+    ctx.fillRect(x, y, boardWidth, boardHeight);
+    ctx.strokeRect(x, y, boardWidth, boardHeight);
+
+    // Labels
+    ctx.fillStyle = '#f07028'; // Orange-ish
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText('SCORE', x + boardWidth - 20, y + 30);
+    ctx.fillText('BEST', x + boardWidth - 20, y + 75);
+
+    // Scores using numeric sprites (scaled down for the board)
+    drawSmallScore(score, x + boardWidth - 20, y + 40);
+    drawSmallScore(bestScore, x + boardWidth - 20, y + 85);
+}
+
+function drawSmallScore(val, rightX, topY) {
+    const scoreStr = val.toString();
+    const digitWidth = 14; // Scaled down
+    const digitHeight = 20;
+    let currentX = rightX - digitWidth;
+
+    for (let i = scoreStr.length - 1; i >= 0; i--) {
+        const char = scoreStr[i];
+        const sprite = assets.sprites[char];
+        ctx.drawImage(sprite, currentX, topY, digitWidth, digitHeight);
+        currentX -= digitWidth;
+    }
 }
 
 // Input handling
@@ -354,6 +429,13 @@ function resetGame() {
     bird.velocity = 0;
     bird.rotation = 0;
     pipes.length = 0;
+    currentPipeSpeed = 2;
+    currentPipeSpawnInterval = 90;
+
+    // Randomize bird and pipe
+    const birdTypes = ['yellow', 'blue', 'red'];
+    bird.type = birdTypes[Math.floor(Math.random() * birdTypes.length)];
+    pipeType = Math.random() < 0.5 ? 'green' : 'red';
 }
 
 init();
