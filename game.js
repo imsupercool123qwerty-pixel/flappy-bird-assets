@@ -109,9 +109,11 @@ function update() {
         if (frameCount % 10 === 0) {
             bird.frame = (bird.frame + 1) % 3;
         }
-    } else if (gameState === 'GAME') {
+    } else if (gameState === 'GAME' || gameState === 'GAMEOVER') {
         updateBird();
-        updatePipes();
+        if (gameState === 'GAME') {
+            updatePipes();
+        }
     }
 }
 
@@ -119,7 +121,15 @@ function updateBird() {
     bird.velocity += GRAVITY;
     bird.y += bird.velocity;
 
-    checkCollisions();
+    if (gameState === 'GAME') {
+        checkCollisions();
+    } else {
+        const baseHeight = assets.sprites['base'].height;
+        if (bird.y + bird.height >= canvas.height - baseHeight) {
+            bird.y = canvas.height - baseHeight - bird.height;
+            bird.velocity = 0;
+        }
+    }
 
     // Rotation
     if (bird.velocity <= 0) {
@@ -145,9 +155,20 @@ function updatePipes() {
         pipeSpawnTimer = 0;
     }
 
+    const minHeight = PIPE_MIN_HEIGHT;
+    const maxHeight = canvas.height - assets.sprites['base'].height - PIPE_GAP - PIPE_MIN_HEIGHT;
+
     for (let i = pipes.length - 1; i >= 0; i--) {
         const p = pipes[i];
         p.x -= currentPipeSpeed;
+
+        if (score >= 30) {
+            p.top += p.vy * p.direction;
+            if (p.top <= minHeight || p.top >= maxHeight) {
+                p.direction *= -1;
+                p.top = Math.max(minHeight, Math.min(maxHeight, p.top));
+            }
+        }
 
         if (p.x + p.width < 0) {
             pipes.splice(i, 1);
@@ -172,7 +193,9 @@ function spawnPipe() {
         x: canvas.width,
         top: topHeight,
         width: 52,
-        passed: false
+        passed: false,
+        vy: (Math.random() * 1) + 0.5,
+        direction: Math.random() < 0.5 ? 1 : -1
     });
 }
 
