@@ -53,8 +53,7 @@ function checkAssetsLoaded(callback) {
 const FPS = 60;
 const GRAVITY = 0.25;
 const JUMP = -4.5;
-const PIPE_SPEED = 2;
-const PIPE_SPAWN_RATE = 1500; // ms
+const INITIAL_PIPE_SPEED = 2;
 const BIRD_X = 50;
 
 // Game state
@@ -63,6 +62,13 @@ let score = 0;
 let frameCount = 0;
 let baseScroll = 0;
 let canRestart = false;
+let flashTimer = 0;
+let shakeTimer = 0;
+let bestScore = parseInt(localStorage.getItem('bestScore')) || 0;
+
+let currentPipeSpeed = INITIAL_PIPE_SPEED;
+let currentPipeSpawnInterval = 90;
+let pipeSpawnTimer = 0;
 
 const bird = {
     x: BIRD_X,
@@ -77,7 +83,6 @@ const bird = {
 const pipes = [];
 const PIPE_GAP = 100;
 const PIPE_MIN_HEIGHT = 50;
-const PIPE_SPAWN_INTERVAL = 90; // frames
 
 function init() {
     loadAssets(() => {
@@ -95,7 +100,7 @@ function update() {
     frameCount++;
 
     if (gameState !== 'GAMEOVER') {
-        baseScroll = (baseScroll + PIPE_SPEED) % 24;
+        baseScroll = (baseScroll + currentPipeSpeed) % 24;
     }
 
     if (gameState === 'START') {
@@ -130,13 +135,19 @@ function updateBird() {
 }
 
 function updatePipes() {
-    if (frameCount % PIPE_SPAWN_INTERVAL === 0) {
+    // Increase difficulty
+    currentPipeSpeed = INITIAL_PIPE_SPEED + (score * 0.05);
+    currentPipeSpawnInterval = Math.max(50, 90 - (score * 1));
+
+    pipeSpawnTimer++;
+    if (pipeSpawnTimer >= currentPipeSpawnInterval) {
         spawnPipe();
+        pipeSpawnTimer = 0;
     }
 
     for (let i = pipes.length - 1; i >= 0; i--) {
         const p = pipes[i];
-        p.x -= PIPE_SPEED;
+        p.x -= currentPipeSpeed;
 
         if (p.x + p.width < 0) {
             pipes.splice(i, 1);
@@ -166,6 +177,15 @@ function spawnPipe() {
 }
 
 function draw() {
+    ctx.save();
+    if (shakeTimer > 0) {
+        const shakeAmount = 10;
+        const dx = (Math.random() - 0.5) * shakeAmount;
+        const dy = (Math.random() - 0.5) * shakeAmount;
+        ctx.translate(dx, dy);
+        shakeTimer--;
+    }
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Placeholder background
@@ -178,6 +198,14 @@ function draw() {
         drawGame();
     } else if (gameState === 'GAMEOVER') {
         drawGameOverScreen();
+    }
+
+    ctx.restore();
+
+    if (flashTimer > 0) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${flashTimer / 10})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        flashTimer--;
     }
 }
 
@@ -243,16 +271,27 @@ function drawBird() {
 }
 
 function drawScore() {
-    const scoreStr = score.toString();
-    const digitWidth = 24; // Standard width for the numeric sprites
-    const totalWidth = digitWidth * scoreStr.length;
-    let x = canvas.width / 2 - totalWidth / 2;
-    const y = 50;
+    drawNumbers(score, canvas.width / 2, 50, 'center');
+}
 
-    for (let char of scoreStr) {
+function drawNumbers(num, x, y, alignment = 'center', scale = 1) {
+    const numStr = num.toString();
+    const digitWidth = 24 * scale;
+    const totalWidth = digitWidth * numStr.length;
+
+    let startX = x;
+    if (alignment === 'center') {
+        startX = x - totalWidth / 2;
+    } else if (alignment === 'right') {
+        startX = x - totalWidth;
+    }
+
+    for (let char of numStr) {
         const sprite = assets.sprites[char];
-        ctx.drawImage(sprite, x, y);
-        x += digitWidth;
+        if (sprite) {
+            ctx.drawImage(sprite, startX, y, digitWidth, sprite.height * scale);
+        }
+        startX += digitWidth;
     }
 }
 
@@ -290,8 +329,17 @@ function checkCollisions() {
 }
 
 function gameOver() {
+    if (gameState === 'GAMEOVER') return;
     gameState = 'GAMEOVER';
     canRestart = false;
+    flashTimer = 10;
+    shakeTimer = 20;
+
+    if (score > bestScore) {
+        bestScore = score;
+        localStorage.setItem('bestScore', bestScore);
+    }
+
     assets.audio['hit'].play();
     setTimeout(() => {
         assets.audio['die'].play();
@@ -307,10 +355,35 @@ function drawGameOverScreen() {
     drawBase();
     drawBird();
 
-    const gameOver = assets.sprites['gameover'];
-    ctx.drawImage(gameOver, canvas.width / 2 - gameOver.width / 2, canvas.height / 2 - gameOver.height / 2);
+    const gameOverSprite = assets.sprites['gameover'];
+    ctx.drawImage(gameOverSprite, canvas.width / 2 - gameOverSprite.width / 2, canvas.height / 2 - 150);
 
-    drawScore();
+    // Draw Scoreboard
+    const sbWidth = 226;
+    const sbHeight = 114;
+    const sbX = canvas.width / 2 - sbWidth / 2;
+    const sbY = canvas.height / 2 - sbHeight / 2;
+
+    // Simple scoreboard box with rounded corners (simulated)
+    ctx.fillStyle = '#ded895';
+    ctx.strokeStyle = '#543847';
+    ctx.lineWidth = 2;
+
+    // Draw box
+    ctx.beginPath();
+    ctx.roundRect(sbX, sbY, sbWidth, sbHeight, 5);
+    ctx.fill();
+    ctx.stroke();
+
+    // Draw Score and Best labels
+    ctx.fillStyle = '#f07028';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText('SCORE', sbX + sbWidth - 20, sbY + 30);
+    drawNumbers(score, sbX + sbWidth - 20, sbY + 35, 'right', 0.6);
+
+    ctx.fillText('BEST', sbX + sbWidth - 20, sbY + 75);
+    drawNumbers(bestScore, sbX + sbWidth - 20, sbY + 80, 'right', 0.6);
 }
 
 // Input handling
@@ -354,6 +427,9 @@ function resetGame() {
     bird.velocity = 0;
     bird.rotation = 0;
     pipes.length = 0;
+    currentPipeSpeed = INITIAL_PIPE_SPEED;
+    currentPipeSpawnInterval = 90;
+    pipeSpawnTimer = 0;
 }
 
 init();
