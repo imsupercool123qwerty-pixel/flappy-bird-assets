@@ -2,14 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Flappy Bird</title>
+    <link rel="icon" href="favicon.ico">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div id="game-container">
         <canvas id="gameCanvas" width="288" height="512"></canvas>
+        <div id="hint">SPACE / CLICK / TAP to flap &middot; M to mute</div>
     </div>
+    <script src="js/core.js"></script>
+    <script src="js/render.js"></script>
     <script src="game.js"></script>
 </body>
 </html>
